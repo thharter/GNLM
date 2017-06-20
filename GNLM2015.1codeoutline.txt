@@ -1,0 +1,511 @@
+﻿Thomas’ Requests to Giorgos for GNLM or statistical analysis modfications:
+
+
+
+
+6/15/107:  changes suggested by Kristin for DirectAppFacility Input file:
+* update my DirectAppFacility input file for 6655 (perc basin of F-155) to 7322 kg N/yr
+
+
+6/14/2017:  adjusting rates for lagoons and corrals due to rasterization
+* The total area of lagoons mapped in the shapefile is 2378.25 ha; the raster file for DirectApp has 6373 ha.
+   * Consider adjusting the  lagoon leakage rate by a factor of 0.373176 to account for the ratio of actual to simulated lagoon area
+* The total area of corrals mapped in the shapefile is 12,243.53 ha; the raster file for DirectApp has 18,292 ha.
+   * Consider adjusting the  corral leakage rate by a factor of 0.669356 to account for the ratio of actual to simulated corral area
+* Note that these ratios would be averages for the Central Valley.
+
+
+
+
+EMAIL 6/13/2017: to Giorgos:
+
+
+So - I am looking at the code and how the periods are handled when assigning NgwDirect for 1600 and 1601. And I think I immediately found the problem, Giorgos:
+
+
+%% Preliminary modifications
+for i = 1:5
+    for j = [1 2 3 5]
+        LU(DirApp(:,i) == j, i) = j + 10000;
+    end
+    LU(DirApp(:,i) > 6000 & DirApp(:,i) < 6500 ,i) = 16000;
+    LU(DirApp(:,i) >= 6500 & DirApp(:,i) < 7000 ,i) = 16500;
+    NgwDirect(LU(:,i) == 1601) = 30;
+    NgwDirect(LU(:,i) == 1602) = 15;
+end
+
+
+We inserted this NgwDirect piece in a debugging session in 2012, I think, and what is happening is that NgwDirect is assigned 30 and 15 in any and all pixels that are 1601 or 1602, respectively, in all periods i = 1,2,3,4,5 (corresponding to 1945, 1960,..., 2005)!  The code should instead look like this to ensure that only the 1601 and 1602 pixels for the simulated period ("year_col") are assigned an NgwDirect of 30 and 15, respectively:
+
+
+%% Preliminary modifications
+for i = 1:5
+    for j = [1 2 3 5]
+        LU(DirApp(:,i) == j, i) = j + 10000;
+    end
+    LU(DirApp(:,i) > 6000 & DirApp(:,i) < 6500 ,i) = 16000;
+    LU(DirApp(:,i) >= 6500 & DirApp(:,i) < 7000 ,i) = 16500;
+end
+NgwDirect(LU(:,year_col) == 1601) = 30;
+NgwDirect(LU(:,year_col) == 1602) = 15;
+
+
+UNRELATED, there are two more changes that need to be implemented in the next run of GNLM to make sure we are accounting for all FP application areas and percolation basins, This is my fault for misleading Giorgos here with my 35xx and 65xx notation, with which I actually meant 3500-3999 and 6500-6999:
+
+
+REPLACE " <= 3599" WITH " <= 3999"
+REPLACE " <= 6599" WITH " <= 6999"
+
+
+NmanureSale adjustment in April 2017:
+* The final program, for May 11, 2017, set the algorithm so that NmanureSale goes to all eligible cropland identified as “2”, INCLUDING cropland on dairy. It is about 25 kg N/ha/yr.
+* The alternative, to not apply any NmanureSale on crops typically grown on dairies (“1”) did not work, because it excluded to much off-dairy acreage with the same crops.
+* More documentation of the discussion PRECEEDING the decision is here:
+* EMAIL 4/19/2017:
+
+
+Hi Kristin, Giorgos,
+
+
+I am looking at 2005 and where NmanureSale has gone and where NlandApplied has gone - to which crops. The below images are slightly massaged version of the GNLM output.
+
+
+The designated land on the dairies encompasses only about 25% of the corn and even less of the total grains. That is partly because we are not capturing all the true dairy crop acreage because CAML doesn't have the right crops within the dairies.  The dairy reports to the Regional Water Board indicate that there are about 235,000 ha of cropland on the dairies.  The total NlandApplied area is 174,000 ha, including all the WWTP/FP land. But we are not that far off.
+
+
+What concerns me more is that, right now, we assume that all the NmanureSale (exports) go to non-corn, non-grain crops (the "2" in the Landuse_Table input file, column C).  The reason (I think), we did this is because we assumed that most corn and grain is on dairies anyway.
+
+
+But I am not sure this is correct. It appears that a lot of corn/sudan/sorghum and grain (all the "1"s in column C of the LanduseTable) is outside of the area captured by "NlandApplied" in the tables below (first figure, by crop group, second and third figure by crop).  If you look at the cropgroup table below, there is about 1 million ha of alfalfa, pasture, grain, and corn/sorghum/sudan not being used for any NmanureSale right now. The current total landarea for NmanureSale is 1.6 Mha.  If we added much of the pasture, grain, corn/sorghum/sudan categories (the "1") to receive NManureSale, the area would be about 50% larger and instead of an average NmanureSale rate of 30 kg N/ha, we probably end up with 20 kg N/ha, on average.
+
+
+We could change GNLM to apply exports also to all crops that have either a "1" or a "2" (not just a "2" in column C of the LanduseTable (Giorgos: this column is read into LUT.Dairy). That would be easy to change.
+
+
+I first thought that the harder part would be to exclude land associated with dairies, WWTP, and FP application areas, but the LU array is already changed to be larger than 10000 for all those pixels, so there is no equivalent in the LUT.DWR_code.
+
+
+The fix to GNLM would go something like this - I think:  within the "else" loop underneath the line "if TotalManureSaleRation > 0" in the GNLM code (around line 195?), you have - about 25 lines lower - these following two lines (remember that you only read in the LanduseTable starting with column B):
+
+
+% delete the pixels that are not 2 in the second column
+dlt_id = dwr_cnty(:,2) ~= 2;
+
+
+If I understand the code correctly, these two line should instead be something like this:
+
+
+% delete the pixels that are not 1 or 2 in the second column
+dlt_id = dwr_cnty(:,2) < 1;
+
+
+or perhaps use an or operator in some way, for example (I am not a Matlab coder):
+
+
+% delete the pixels that are not 1 or 2 in the second column
+dlt_id = dwr_cnty(:,2) ~= {1 || 2};
+
+
+
+
+
+
+* EMAIL 4/19/2017: One more thought on the below email.   I figured out that the code, as written, will actually NOT prevent NmanureSale to go to dairy cropland. It already does put NmanureSale on alfalfa and clover but prevents it from going to urban, golf courses, lagoons, corrals, and WWTP/FP percolation basins. It would be easy to exclude the dairy land from NmanureSale (see below). The small downside is:  if we do it the way outlined below, then none of the "2" crops within a dairy will receive either on-dairy (liquid) manure OR exported (solid) manure. In the NmanureSale  GNLM code section that starts with:
+
+
+if TotalManureSaleRatio > 0
+
+
+The following two lines:
+
+
+ %delete the pixel with 3xxx, 35xx, 4xxx
+ dlt_id = dwr_cnty(:,3)>=3000 & dwr_cnty(:,3) < 5000;
+
+
+could be rewritten to also exclude the dairy pixels:
+
+
+ %delete the pixel with 1xxx, 2xxx, 3xxx, 35xx, 4xxx
+ dlt_id = dwr_cnty(:,3)>=1000 & dwr_cnty(:,3) < 5000;
+
+
+Can we add the above change?
+
+
+Alternatively (and I am NOT suggesting to go this route): without the above correction, we would just need to live with the small error that comes from having some of the NmanureSale (thought of as dry manure) - namely about 25 kg/ha - actually come back to the same fields on the dairy (the dairy's "1" crops, ie., corn, grain) that already receive NlandApplied.
+  
+
+
+
+PRIOR TO 2015/12 run:
+* in GNLM: multiply NSeptic and NManureSale at each pixel by 4 (see corrected logic in red below) - NEW - DONE
+* in GNLM:  NlandUseYEAR for alfalfa (1601) and clover (1602) needs to be set to negative (-1601, -1602) and a NgwDirect = 30 (for alfalfa) and 15 (for clover) be assigned (see corrected logic in red below) - DONE
+* in GNLM:  Ngw_nondirect (line 266) needs to be made consistent with Ngw (line 251) and use only pos_lu pixels - DONE.
+* in GNLM:  Nirrigation = 0 in all pixels for which Nharvest = 0 (non-irrigated landuses) (see corrected logic below) - DONE
+* in Output_STAT.m:  multiply “SUM” by 0.25 (see corrected logic in red below)
+* Thomas changed LanduseTable:  CAML codes 4 (irrigated agriculture) and 5 (annual grassland) are now 0 instead of 1 for LUdrivenNsource_WWTP_B and _FP. - DONE (code updated to new file name)
+* THREE ERROS THAT I CANNOT FIGURE OUT:
+* in GNLM: vineyards (CAML code 2200) have NO Nnorm, Nfertilizer, or Nharvest!!! => that cannot be. I HAVE NO IDEA WHY THIS ERROR OCCURS - CAN YOU CHECK?? There is, e.g., NManureSale and NSeptic, and Nirrigation on 2200.  MOST INTERESTINGLY:  THERE IS Ngw on VINEYARDS that is very reasonable.  So perhaps somewhere the Nharvest, Nnorm, Nfertilizer gets lost or not reported, but it is properly used in the mass balancce.  POSSIBLE FIX: temp = xlsread(['Input_Data\' TimeSeriesFile],'TimeSeriesTableCrops','A2:E281'); should be E296 instead of E281
+* in GNLM:  when you look at NgwDirect for 2005, e.g., in your statistics for “landUses”, you will see that NgwDirect only exists for alfalfa and clover.  There are no urban pixels that have NgwDirect.  But that doesn’t make sense. Is it because somehow the NgwDirect for DirectApp = 1, 2, 3,....., 65xx is not counted? This may be in GNLM or the stats program.  The same error may carry over to the reporting of Ngw:  For example, the Ngw for “Urban” (in LUGroups) averages less than 5 kg N/ha/yr, but should be 20.  POSSIBLE FIX in GNLM and output_stat.m: 
+      * for i = 1:5
+      *     for j = [1 2 3 5]
+      *         LU(DirApp(:,i) == j) = j + 10000;
+      *     end
+      *     LU(DirApp(:,i) > 6000 & DirApp(:,i) < 6500 ,i) = 16000;
+      *     LU(DirApp(:,i) >= 6500 & DirApp(:,i) < 7000 ,i) = 16500;
+      *     NgwDirect(LU(:,i) == 1601) = 30;
+      *     NgwDirect(LU(:,i) == 1602) = 15;
+      * end
+* * in GNLM:  Thomas to Giorgos:  When I checked the total amount of NLandApplied for the Central Valley in 2005, the total is 174 million kg N.  In the file “DirectAppFacility_2015-0706.xlsx”, column I (“Eff_KgN_Y”) adds up to about 187 million kgs - that’s a problem.  On the other hand, when I did the same for NManureSale, it matched EXACTLY the total amount for all counties in the NManureSale input file (45,396,021 kg N/yr) - that’s perfect! My hypothesis is that the difference in NlandApplied is because we are somehow assigning land application to agricultural pixels that are not part of the N mass balance (that is, DirAppCode = 1, 2, 3, 5, 6xxx, 65xx) and therefore have assigned a negative LandUseYEAR in GNLM.  Trying to figure this out, I have some subquestions for clarification - mostly trying to remember what we had you SIMULATE for DirAppCode earlier this year):
+   * the NON-simulated dairy areas (DirAppCode = 1xxx, 2xxx) are from APNs (assessor parcel numbers) that presumably encompass ALL land areas under control by dairies, including areas that do not recceive NLandApplication (lagoons, corrals, alfalfa, orchards….).  IN CONTRAST, I believe that the dairy land application areas that YOU simulated, you already picked out the right landuse parcels (LUDrivenNsourceType_Dairy(LandUseYEAR) =1). Can you confirm?
+   * similarly, the land application areas for 3xxx (WWTP), 35xx (FP), and 4xxx (Biosolids) were all simulated by YOU prior to GNLM.  Can you confirm that you used the proper LUDrivenNsourceType_WWTP/FP/Biosolids when you did that? In GNLM you are making no sub-selection from pixels with DirAppCode 3xxx, 35xx, 4xxx. 
+   * if I remember all of the above correctly, so far so good.
+   * Then, my next thought was that the issue is this:  while the dairies do not apply NlandApplied to 1601 or 1602, the WWTP_B and FP are both allowing for application to alfalfa and clover (LUDrivenNSourceType_WWTP/FP/B = 1). This was done by design and is correct. But as a result that NlandApplied does not show up in the mass balance since none is done for alfalfa and clover. 
+   * However, NManureSale also goes to 1601 and 1602, yet, we are NOT losing any NManureSale - not one kilogram.
+   * So, there is a problem. The fact that NlandApplied (LUdrivenNSourceType_Dairy = 1) has an error, but NManureSale (LUdrivenNSourceType_Dairy =  2) may indicate that the problem is with the DAIRY pixels, not with the WWTP, FP, or Biosolids pixels (DirectAppCode = 3xxx, 35xx, 4xxx).
+   * All 3xxx, 35xx, and 4xxx pixels are simulated and do not pick any areas with DirAppCode 1,2,3,5, 6xxx,65xx. But they DO pick alfalfa and clover. That shows up properly in the stats analysis and should still show up in the statistical analysis once we set the LandUseYEAR to -LandUseYEAR for alfalfa (CAML 1601) and clover (CAML 1602).
+   * Some of the 1xxx and 2xxx are NOT simulated and may overlap with eligible CAML crop pixels that now have DirAppCode = 1, 2, 3, 5, 6xxx, 65xx.  Then NlandApplied to those pixels would no longer be accounted for in the mass balance (neg_lu).  But I think that GNLM line 63 and lines 131, 134 actually take care of this correctly and only POSITIVE pixels are used for NlandApplied.
+   * So - I can’t see to the bottom of this problem, but it seems significant enough (especially compared to NManureSale) that we make sure we figure this out.  The problem MUST lie somewhere around line 134 - because it is all about the pixels that get selected and then not counted in the mass balance analysis?! Maybe check first whether NlandApplied(neg_lu,1) > 0? If so, we need to figure out what neg_lu pixels get NlandApplied and why?
+* I updated the Landuse file (now called “LanduseTable_2015-1026.xlsx”:
+   * I renamed CAML Code = 1 to “urban” and also changed its LU group to “urban”
+   * I renamed CAML code = 2 to “natural vegetation” and changed its LU group to “native vegetation”
+* Some other numbers I checked:
+   * Nseptic in 2005 amounts to 5,772,100 kg N/yr (after accounting for the fact that NSeptic - like NManureSale - is kg N/pixel/year and not kg N/ha/year), which equates to 1,398,848 people on septic systems - that’s about 3x to 4x larger than I expected, but I would need to check that against the number of folks in the septic column of model_input. But here is what I know: the total population is 6.5 million in the Central Valley. In the SBX2 1 study, we found that among the 2.65 million people about 170,000 were on domestic wells and therefore on septic. 
+   * Ndeposition in 2005 is about 50 million kg - and every pixel has some of it. That’s about 9.5 kg/ha for each of the 5.3 million ha. Makes sense
+   * Nirrigation in 2005 is about 40 million kg - and almost every pixel has some of it. That’s about 8 kg/ha for the 5.2 million ha with NIrrigation. Makes sense. But I need to change the logic:  Irrigation water should only go on commercial crops and not on natural lands.
+   * total ha (non-zero) in 2005 over all counties are:
+      * Nseptic - 2,997,643
+      * Ndeposition - 5,289,084 (all pixels!)
+      * Nirrigation - 5,214,907 (see correction to be made above!)
+      * NgwDirect - 791,866 (includes urban)
+      * NlandApplied - 174,215 (may be too low compared to reality due to not enough eligible crops within the dairy APN land pixels)
+      * Nnorm - 2,763,947 (there is no Nnorm for pasture)
+      * Nfertilizer - 2,763,947
+      * NmanureSale - 1,608,223
+      * Nharvest - 2,894,958 (includes pasture - do we have 130,000 ha of pasture and turf farms in 2005?)
+      * Nharvest_actual - 2,894,958
+      * N_runoff_actual - 4,814,364
+      * Ngw - 5,288,853
+      * NatmLosses -         4,800,497
+      * Ngw_nondirect - 3,518,368 (includes natural lands with > 0 leaching)
+
+
+Thomas Still Needs to Do:
+* make NmanureSaleTable - DONE
+* update Nharvest - DONE
+* review TotalAnimalRatio - DONE
+* add the logic for alfalfa and clover into the code outline below - DONE
+* review DirectApp spreadsheet - DONE for dairies, rest still to be done later
+* check to make sure Septics is 2005 population
+* make landuse group list for summary stats (column F in Landuse...xlsx file) - DONE
+* check what we do with dairies that have - DONE
+   * no animals but land application area => zero manure application
+   * animals but no land application area => simulated land application area based on number of animals (already done prior to GNLM)
+   * no animals and no land application area => no problem
+* review “227 Gail and Andy Workplan” to make sure the below is consistent with all our assumptions - DONE
+* review Andy’s new maps with Giorgos’ new simulated areas
+* DO NOT CHANGE THE FORMAT OF THE INPUT FILES
+* DO NOT CHANGE THE NAMES OF THE WORKSHEET
+* PLEASE AVOID SPACES IN NAMEFILES AND FOLDERS
+
+
+IMPORTANT NOTE ABOUT UNITS OF N:
+* the program is designed to provide N in units of kg N/ha/yr even though the resolution is at the pixel basis
+* each pixel is only 0.25 ha
+* the total N flux per pixel is then 0.25 * the N numbers computed here (which is in kg N/ha/yr)
+
+
+PROGRAM CODE LOGIC:
+
+
+LOOP OVER ALL YEARs
+        LOOP OVER ALL PIXELS
+
+
+* Ngw is NOT computed by mass balance for urban, golf course, corral, lagoon, and percolation basins, all of which are identified in DirectApp (but not all of these are identified in LandUseYEAR). To do this, change LandUseYEAR (columns 5-9 in model_input) to a newly defined landuse code for those pixels:
+
+
+if DirAppCode = 1, 2, 3, 5,
+LanduseYEAR = 10000 + DirAppCode
+endif
+if DirAppCode = 6xxx
+LanduseYEAR = 16000
+endif
+if DirAppCode = 65xx
+LanduseYEAR = 16500
+endif
+
+
+
+
+Note: there is no overlap between pixels of DirectAppCodes 1xxx, 2xxx, 3xxx, 35xx
+
+
+* Alfalfa and Clover:  Ngw is NOT computed by mass balance for alfalfa (LanduseYEAR code = 1601) or for clover (LanduseYEAR code = 1602). Instead, it is assumed that Ngw from alfalfa is 30 kg N/ha/yr (TR2 2012, page 75) and for clover it is 15 kg N/ha/yr. Ngw from alfalfa or clover is assumed not to be impacted by Nseptic, Ndeposition, Nirrigation, Nfertilizer, NlandApplied, or NmanureSale. If the 1601 or 1602 landuse pixel has been selected for urban, golf, lagoon, corral, or WWTP/FP percolation basins, the latter will override the alfalfa/clover designation by having the LanduseYEAR set to 10001,..., 16000, or 16500 in the previous loop. The following will only apply if LanduseYEAR above remains +1601, +1602. These will here be set setting NgwDirect to that for alfalfa/clover:
+
+
+If LanduseYEAR = 1601
+        LanduseYEAR = LanduseYEAR (no change!)
+NgwDirect = 30
+Endif
+If LanduseYEAR = 1602
+        LanduseYEAR = LanduseYEAR (no change!)
+NgwDirect = 15
+Endif
+
+
+
+
+* Nseptic = 4 * Septics * (365*0.85*13.3*1e-03) * TotalPeopleRatio
+        (Septics : 16th column of model_input; this is the number of people on septics per 0.25 ha pixel;  SBX2 1 Technical Report 2 page 218 states that per person N excretion is 13.3 grams/d of which 85% leaches to groundwater; Blanks are treated as zero; The number needs to be multiplied by 4 to be consistent with other N fluxes, which are all in units of kg N/ha/year (NOT in kg N/pixel/year).
+
+
+TotalPeopleRatio : TimeSeriesLandUse_CV_FREP.6.13.15 - temp.xlsx -1st worksheet)
+
+
+* Ndeposition = Ndep * NdepositionRatio
+(Ndep : 15th column of the model input; NdepositionRatio :TimeSeriesLandUse_CV_FREP.6.13.15 - temp.xlsx -1st worksheet (use NdepositionRatio1))
+
+
+* Nirrigation
+(get data from NIrrigation2005Table-20150603.xlsx; SubbasinID:18th column of model_input)
+
+
+If the pixel SubBasinID can be found on the list (rows 4:end) use:
+Nirrigation = NirrigationRatioYEAR * Nirrigation2005
+else if SubBasinID ==56xx
+Nirrigation = NirrigationRatioYear * 3.6
+       if SubBasinID ==521xx
+        Nirrigation = NirrigationRatioYear * 4.5
+end if
+
+
+below the Nharvest computation, insert the following to ensure that Nirrigation is only applied to harvested landuse:
+if (Nharvest = 0) then Nirrigation = 0
+
+
+* NmanureSale
+
+
+default = zero
+
+
+read file “NmanureSale.xlsx” (column 1: county; column 2: NmanureSaleTotalCOUNTY, which is the county total NmanureSale in kg N/Yr)
+
+
+TotalManureSaleRatio(2005) = 1
+TotalManureSaleRatio(1990) = 10/25
+TotalManureSaleRatio(1975, 1960, 1945) = 0
+
+
+for each county:
+NmanureSaleAreaCOUNTY =
+     0.25 * Sum(pixels with LUDrivenNsourceType_Dairy(LandUseYEAR) = 2  AND
+DirAppYEAR NOT EQUAL TO (3xxx, 35xx, 4xxx))
+
+
+for each pixel (NmanureSale in kg N/ha/yr):
+NmanureSale = 4 * 0.25 * TotalManureSaleRatio * TotalAnimalRatio *
+NmanureSaleTotalCOUNTY / NmanureSaleAreaCOUNTY
+
+
+* NlandApplied
+
+
+default is zero
+use codes in columns DirAppYEAR: (columns 10-14 in model_input):
+
+
+* Dairies: DirectAppYEAR = 1001 - 2999 (THOMAS NEEDS TO CHECK WHICH COLUMN IN DirectAppFacility...xlsx {Guessing Column I, zero out negative})
+        NlandApplied = TotalAnimalRatio * EFF_KgN_Y / (0.25 * number of pixels with dairy code AND LUDrivenNsourceType_Dairy(LandUseYEAR) =1)
+        NlandApplied = 0 for years 1945, 1960
+
+
+* WWTP effluent application area in agriculture: DirAppYEAR = 3001 - 3499 (DirectAppFacility_20150603.xlsx Column I “EFF.”)
+        NlandApplied = TotalPeopleRatio * EFF_KgN_Y / (0.25 * number of all pixels with the same code)
+
+
+* FP effluent application area in agriculture: DirAppYEAR = 3501 - 3599 (DirectAppFacility_20150603.xlsx Column I “EFF.”)
+NlandApplied = TotalPeopleRatio * EFF_KgN_Y / (0.25 * number of all pixels with the same code)
+
+
+* Biosolids application area in agriculture: DirAppYEAR = 4xxx (DirectAppFacility_20150603.xlsx Column I “EFF.”)
+NlandApplied = TotalPeopleRatio * EFF_KgN_Y / (0.25 * number of all pixels with the same code)
+
+
+* NgwDirect
+
+
+default is zero
+use codes in columns DirAppYEAR: (columns 10-14 in model_input):
+
+
+all numbers below are in [kg N/ha/Y] (NOT in kg N/pixel/Y !!!)
+
+
+Urban: DirAppYEAR = 1    NgwDIrect = 10+10 
+Lagoons: DirAppYEAR = 2   NgwDirect = 1171 (0 in years 1945, 1960) [new rate according to new study by LSCE to be published in late 2015]
+Corrals: DirAppYEAR = 3   NgwDirect = 183 (0 in years 1945, 1960)
+Golf courses: DirAppYEAR =  5  NgwDirect = 10
+
+
+WWTP PercBasins: DirAppYEAR = 6xxx (DirectAppFacility_20150603.xlsx Column J “PERC”) 
+NgwDirect = TotalPeopleRatio * PERC_KgN_Y / (0.25 * number of all pixels with the same code)
+
+
+FP PercBasins: DirAppYEAR = 65xx (DirectAppFacility_20150603.xlsx Column J “PERC”)
+NgwDirect = TotalPeopleRatio * PERC_KgN_Y / (0.25 * number of all pixels with the same code)
+
+
+* Nfertilizer
+
+
+Read Nnorm from TimeSeriesLanduseTable, second sheet “TimeSeriesTableCrops”, column NEW Nnorm [kg/ha/yr]
+
+
+Nfertilizer = 0.5*Nnorm + Max(0, [0.5 * Nnorm - NlandApplied])
+
+
+
+
+* Nharvest_actual = Min(Nharvest, 0.9*(Ndeposition + Nirrigation + Nfertilizer + NmanureSale + NlandApplied)
+
+
+* Nrunoff = 14
+Nrunoff_actual = Min(Nrunoff, 0.9*(Ndeposition + Nirrigation + Nfertilizer + NmanureSale + NlandApplied) - Nharvest_actual)
+(Nharvest :TimeSeriesLandUse_CV_FREP.6.13.15 - temp.xlsx - 2nd worksheet- 5th column. Values per DWR Codes The codes for each year are listed in model input columns 5-9)
+
+
+* Ngw comes either from NgwDirect or else from mass balance:
+
+
+If LanduseYEAR  = {1601, 1602, 10001, 10002, 10003, 10005, 16000, 16500}
+Ngw = NgwDirect
+else compute Ngw from N balance: 
+Ngw =
+Nseptic + NgwDirect + 
+[0.9.*(Ndeposition + Nirrigation+ Nfertilizer + NmanureSale + NLandApplied)
+                           - Nharvest_actual - Nrunoff_actual];
+        Endif
+
+
+* NatmLosses are the total atmospheric N losses in cropping systems for which the N mass balance is performed (which does not include alfalfa and clover). Note: the below assumes that NgwDirect sources have zero N emissions and that N losses in dairies (38% of N right off the back-end of the cow) and in WWTP/FPs (assuming the same N atmospheric losses as in dairies, before N application), are here spatially attributed to the fields that receive NmanureSale and NLandAppplied, although they actually occur in the facility itself. We do not have the facility locations coded to this, but this approximation is considered appropriate due to the magnitude of atmospheric mixing.
+
+
+If LanduseYEAR  = {1601, 1602, 10001, 10002, 10003, 10005, 16000, 16500}
+NatmLosses = 0           
+else compute NatmLosses from N balance: 
+NatmLosses =
+(0.15/0.85)*Nseptic + 
+[0.1.*(Ndeposition + Nirrigation+ Nfertilizer + NmanureSale + NLandApplied) +
+                                                             (0.38/0.62) * (NmanureSale + NLandApplied);
+        Endif
+
+
+END LOOP OVER ALL PIXELS
+END LOOP OVER ALL YEARS
+
+
+
+
+
+
+PREPARE CODE OUTPUT:
+
+
+Save all years, all variables, all pixels
+
+
+Summary Statistics:
+
+
+Note: LanduseGroups are listed in Column F in “LanduseTable_2015-1026.xlsx”
+
+
+
+
+if DirAppCode = 1, 2, 3, 5,
+LanduseYEAR = 10000 + DirAppCode
+endif
+if DirAppCode = 6xxx
+LanduseYEAR = 16000
+endif
+if DirAppCode = 65xx
+LanduseYEAR = 16500
+endif
+
+
+For each Subbasin/County/LanduseGroup/LandUse compute the
+* ha (=N of pixels/4),
+* non-zero ha (= non-zero N of pixels/4),
+* sum of N in [kg N/year] = sum over all pixels * 0.25 (because the numbers on each pixel are kg N/ha/yr but each pixel is only 0.25 ha) 
+* mean (all pixels),
+* mean (non-zero pixels),
+* median,
+* std (all pixels),
+* std (non-zero pixels),
+* min,
+* max,
+* 10 percentile
+* 25,
+* 75,
+* 90,
+* 95,
+* 99,
+* 99.9 percentile
+
+
+Compute groundwater subbasin mass balance
+For each Year
+        for each Subbasin
+                Ndeposition
+Nseptic
+Nirrigation
+Nnorm
+Nfertilizer
+NmanureSale
+NLandApplied
+                   Nharvest_actual
+Nharvest
+Nrunoff_actual
+Nrunoff
+Ngw_nondirect = Max(0,[0.9.*(Ndeposition + Nirrigation+ Nfertilizer + NmanureSale + NLandApplied)
+                           - Nharvest_actual - Nrunoff_actual]
+                Ngw
+NgwDirect
+NatmLosses
+        End Loop
+End Loop
+
+
+Compute county mass balance
+For each Year
+        for each county
+                … (same list as above)...
+        End Loop
+End Loop
+
+
+Compute landuse group mass balance (e.g., tree fruit, nuts, citrus, vegetables, urban, industrial, no data, etc.).  
+For each Year
+        for each landuse group
+                … (same list as above)...
+        End Loop
+End Loop
+
+
+Compute landuse mass balance 
+For each Year
+        for each landuse
+                … (same list as above)...
+        End Loop
+End Loop
+
+
+ADD two extra columns to the saved YEAR results (maps) for Andy:
+* modified LU
+* DirAppCode
+
+
+Link to Andy’s box folder https://ucdavis.box.com/GNLM-CV
