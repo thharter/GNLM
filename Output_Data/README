@@ -1,0 +1,5 @@
+This directory is empty. Here is where output will be created.
+IMPORTANT:
+    old output will be overwritte
+    consider changing the target directory in gnlm_main.m
+    output files will be huge
