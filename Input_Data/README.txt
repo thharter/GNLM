@@ -1,3 +1,6 @@
+6/23/2017:
+* NmanureSale_2015_0706.xlsx: did NOT rename file, but moved Colusa and Contra Costa County up to below Butte, so that it can be properly processed by output_stat_County.m
+
 5/15/2017:
 * changed "Olives" in column F into its own landuse group ("Olives")
  
